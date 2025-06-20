@@ -1,16 +1,18 @@
 import React, { useEffect } from 'react';
-import { Gamepad2, Sparkles } from 'lucide-react';
+import { Gamepad2, Sparkles, BarChart3 } from 'lucide-react';
 import { WalletConnection } from './components/WalletConnection';
 import { GameSetup } from './components/GameSetup';
 import { GameLobby } from './components/GameLobby';
 import { GamePlay } from './components/GamePlay';
 import { GameResults } from './components/GameResults';
+import { GameDashboard } from './components/GameDashboard';
 import { useGameState } from './hooks/useGameState';
 
 function App() {
   const {
     gameRoom,
     user,
+    loading,
     connectWallet,
     disconnectWallet,
     createGame,
@@ -22,7 +24,9 @@ function App() {
     resetGame,
   } = useGameState();
 
-  // Auto-advance questions during gameplay
+  const [currentView, setCurrentView] = React.useState<'game' | 'dashboard'>('game');
+
+  // 自動推進問題
   useEffect(() => {
     if (gameRoom?.status === 'active' && gameRoom.participants.length > 0) {
       const allAnswered = gameRoom.participants.every(
@@ -56,7 +60,7 @@ function App() {
                 Quiz<span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">Chain</span>
               </h1>
               <p className="text-xl text-white/70 mb-8">
-                Compete in trivia games and earn crypto rewards! Create questions, stake tokens, and let the smartest players win.
+                參與問答遊戲並獲得加密貨幣獎勵！創建問題、質押代幣，讓最聰明的玩家獲勝。
               </p>
             </div>
             
@@ -65,24 +69,24 @@ function App() {
                 <div className="w-12 h-12 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Sparkles className="w-6 h-6 text-purple-400" />
                 </div>
-                <h3 className="text-white font-semibold mb-2">Create Games</h3>
-                <p className="text-white/60 text-sm">Set up trivia questions and stake tokens as prizes</p>
+                <h3 className="text-white font-semibold mb-2">創建遊戲</h3>
+                <p className="text-white/60 text-sm">設定問答題目並質押代幣作為獎品</p>
               </div>
               
               <div className="bg-white/5 backdrop-blur-sm rounded-xl p-6 border border-white/20">
                 <div className="w-12 h-12 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Gamepad2 className="w-6 h-6 text-blue-400" />
                 </div>
-                <h3 className="text-white font-semibold mb-2">Play & Win</h3>
-                <p className="text-white/60 text-sm">Answer questions quickly and correctly to earn tokens</p>
+                <h3 className="text-white font-semibold mb-2">遊玩獲勝</h3>
+                <p className="text-white/60 text-sm">快速正確回答問題以獲得代幣</p>
               </div>
               
               <div className="bg-white/5 backdrop-blur-sm rounded-xl p-6 border border-white/20">
                 <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
                   <div className="w-6 h-6 bg-green-400 rounded-full"></div>
                 </div>
-                <h3 className="text-white font-semibold mb-2">Auto Rewards</h3>
-                <p className="text-white/60 text-sm">Smart contracts automatically distribute prizes</p>
+                <h3 className="text-white font-semibold mb-2">自動獎勵</h3>
+                <p className="text-white/60 text-sm">智能合約自動分配獎品</p>
               </div>
             </div>
             
@@ -96,15 +100,70 @@ function App() {
       );
     }
 
+    if (currentView === 'dashboard') {
+      return (
+        <div className="min-h-screen">
+          <header className="p-6 flex justify-between items-center">
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
+                  <Gamepad2 className="w-6 h-6 text-white" />
+                </div>
+                <h1 className="text-2xl font-bold text-white">QuizChain</h1>
+              </div>
+              
+              <nav className="flex gap-4">
+                <button
+                  onClick={() => setCurrentView('game')}
+                  className="text-white/70 hover:text-white transition-colors"
+                >
+                  遊戲
+                </button>
+                <button
+                  onClick={() => setCurrentView('dashboard')}
+                  className="text-white border-b-2 border-purple-400"
+                >
+                  儀表板
+                </button>
+              </nav>
+            </div>
+            <WalletConnection
+              user={user}
+              onConnect={connectWallet}
+              onDisconnect={disconnectWallet}
+            />
+          </header>
+          <GameDashboard userAddress={user.address} />
+        </div>
+      );
+    }
+
     if (!gameRoom) {
       return (
         <div className="min-h-screen">
           <header className="p-6 flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
-                <Gamepad2 className="w-6 h-6 text-white" />
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
+                  <Gamepad2 className="w-6 h-6 text-white" />
+                </div>
+                <h1 className="text-2xl font-bold text-white">QuizChain</h1>
               </div>
-              <h1 className="text-2xl font-bold text-white">QuizChain</h1>
+              
+              <nav className="flex gap-4">
+                <button
+                  onClick={() => setCurrentView('game')}
+                  className="text-white border-b-2 border-purple-400"
+                >
+                  遊戲
+                </button>
+                <button
+                  onClick={() => setCurrentView('dashboard')}
+                  className="text-white/70 hover:text-white transition-colors"
+                >
+                  儀表板
+                </button>
+              </nav>
             </div>
             <WalletConnection
               user={user}
@@ -195,6 +254,17 @@ function App() {
         return null;
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-purple-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-white/70">載入中...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">

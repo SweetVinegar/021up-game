@@ -4,12 +4,12 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
+  throw new Error('缺少 Supabase 環境變數');
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Database types
+// 資料庫類型定義
 export interface Database {
   public: {
     Tables: {
@@ -185,3 +185,55 @@ export interface Database {
     };
   };
 }
+
+// 輔助函數
+export const getGameWithDetails = async (gameId: string) => {
+  const { data, error } = await supabase
+    .from('games')
+    .select(`
+      *,
+      questions (*),
+      participants (*),
+      token_transactions (*)
+    `)
+    .eq('id', gameId)
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const subscribeToGameUpdates = (gameId: string, callback: (payload: any) => void) => {
+  return supabase
+    .channel(`game-updates-${gameId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'games',
+        filter: `id=eq.${gameId}`,
+      },
+      callback
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'participants',
+        filter: `game_id=eq.${gameId}`,
+      },
+      callback
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'answers',
+      },
+      callback
+    )
+    .subscribe();
+};
