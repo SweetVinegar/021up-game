@@ -2,13 +2,13 @@ import { ethers } from 'ethers';
 
 // Contract ABIs (simplified for demo)
 export const TRIVIA_GAME_ABI = [
-  "function createGame(address token, uint256 rewardPerQuestion, uint256 totalQuestions) external returns (uint256)",
+  "function createGame(address _token, uint256 _rewardPerQuestion, uint256 _totalQuestions, uint8 _category, uint8 _difficulty) external returns (uint256)",
   "function joinGame(uint256 gameId) external",
   "function startGame(uint256 gameId) external",
   "function updateScores(uint256 gameId, address[] participants, uint256[] scores) external",
   "function completeGame(uint256 gameId, address[] winners, uint256[] rewardAmounts) external",
   "function cancelGame(uint256 gameId) external",
-  "function getGame(uint256 gameId) external view returns (address, address, uint256, uint256, uint256, uint256, uint8, uint256, uint256)",
+  "function getGame(uint256 gameId) external view returns (address organizer, address token, uint256 rewardPerQuestion, uint256 totalStaked, uint256 totalQuestions, uint256 totalParticipants, uint8 status, uint256 startTime, uint256 endTime, uint8 category, uint256 difficulty)",
   "function isParticipant(uint256 gameId, address participant) external view returns (bool)",
   "function getParticipantScore(uint256 gameId, address participant) external view returns (uint256)",
   "function getParticipantReward(uint256 gameId, address participant) external view returns (uint256)",
@@ -16,7 +16,12 @@ export const TRIVIA_GAME_ABI = [
   "event ParticipantJoined(uint256 indexed gameId, address indexed participant)",
   "event GameStarted(uint256 indexed gameId, uint256 startTime)",
   "event GameCompleted(uint256 indexed gameId, uint256 endTime)",
-  "event RewardDistributed(uint256 indexed gameId, address indexed participant, uint256 amount)"
+  "event RewardDistributed(uint256 indexed gameId, address indexed participant, uint256 amount)",
+  "function setPlatformFee(uint256 _feePercent) external",
+  "function setFeeRecipient(address _feeRecipient) external",
+  "function pause() external",
+  "function unpause() external",
+  "function setDifficultyMultiplier(uint256 _difficulty, uint256 _multiplier) external"
 ];
 
 export const QUIZ_TOKEN_ABI = [
@@ -26,13 +31,19 @@ export const QUIZ_TOKEN_ABI = [
   "function allowance(address owner, address spender) external view returns (uint256)",
   "function symbol() external view returns (string)",
   "function decimals() external view returns (uint8)",
-  "function totalSupply() external view returns (uint256)"
+  "function totalSupply() external view returns (uint256)",
+  "function mint(address to, uint256 amount) external",
+  "function addMinter(address minter) external",
+  "function removeMinter(address minter) external",
+  "function isMinter(address minter) external view returns (bool)",
+  "function pause() external",
+  "function unpause() external"
 ];
 
 // Contract addresses (to be updated after deployment)
 export const CONTRACT_ADDRESSES = {
-  TRIVIA_GAME: process.env.VITE_TRIVIA_GAME_ADDRESS || '0x0000000000000000000000000000000000000000',
-  QUIZ_TOKEN: process.env.VITE_QUIZ_TOKEN_ADDRESS || '0x0000000000000000000000000000000000000000',
+  TRIVIA_GAME: import.meta.env.VITE_TRIVIA_GAME_ADDRESS || '0x78afd8e9d94da6c232cab43fe88131463ea3fa78',
+  QUIZ_TOKEN: import.meta.env.VITE_QUIZ_TOKEN_ADDRESS || '0xb24307c8a40a0dc5609674456b58148d65fbf50c',
 };
 
 export class BlockchainService {
@@ -85,7 +96,9 @@ export class BlockchainService {
   async createGame(
     tokenAddress: string,
     rewardPerQuestion: string,
-    totalQuestions: number
+    totalQuestions: number,
+    category: number,
+    difficulty: number
   ): Promise<{ gameId: number; txHash: string }> {
     if (!this.triviaGameContract || !this.quizTokenContract) {
       throw new Error('Contracts not initialized');
@@ -105,7 +118,9 @@ export class BlockchainService {
     const tx = await this.triviaGameContract.createGame(
       tokenAddress,
       rewardAmount,
-      totalQuestions
+      totalQuestions,
+      category,
+      difficulty
     );
     
     const receipt = await tx.wait();
@@ -121,6 +136,7 @@ export class BlockchainService {
     if (!event) throw new Error('Game creation failed');
     
     const parsedEvent = this.triviaGameContract.interface.parseLog(event);
+    if (!parsedEvent) throw new Error('Failed to parse GameCreated event');
     const gameId = Number(parsedEvent.args.gameId);
 
     return { gameId, txHash: tx.hash };
@@ -172,15 +188,17 @@ export class BlockchainService {
     
     const gameInfo = await this.triviaGameContract.getGame(gameId);
     return {
-      organizer: gameInfo[0],
-      token: gameInfo[1],
-      rewardPerQuestion: ethers.formatEther(gameInfo[2]),
-      totalStaked: ethers.formatEther(gameInfo[3]),
-      totalQuestions: Number(gameInfo[4]),
-      totalParticipants: Number(gameInfo[5]),
-      status: Number(gameInfo[6]),
-      startTime: Number(gameInfo[7]),
-      endTime: Number(gameInfo[8])
+      organizer: gameInfo.organizer,
+      token: gameInfo.token,
+      rewardPerQuestion: ethers.formatEther(gameInfo.rewardPerQuestion),
+      totalStaked: ethers.formatEther(gameInfo.totalStaked),
+      totalQuestions: Number(gameInfo.totalQuestions),
+      totalParticipants: Number(gameInfo.totalParticipants),
+      status: Number(gameInfo.status),
+      startTime: Number(gameInfo.startTime),
+      endTime: Number(gameInfo.endTime),
+      category: Number(gameInfo.category),
+      difficulty: Number(gameInfo.difficulty)
     };
   }
 

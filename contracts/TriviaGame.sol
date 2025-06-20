@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title TriviaGame
@@ -14,6 +14,19 @@ import "@openzeppelin/contracts/security/Pausable.sol";
  */
 contract TriviaGame is ReentrancyGuard, Ownable, Pausable {
     using SafeERC20 for IERC20;
+
+    enum GameStatus {
+        Created,
+        Active,
+        Completed,
+        Cancelled
+    }
+
+    enum GameCategory {
+        GeneralKnowledge,
+        Crypto,
+        Technology
+    }
 
     struct Game {
         uint256 gameId;
@@ -30,19 +43,15 @@ contract TriviaGame is ReentrancyGuard, Ownable, Pausable {
         mapping(address => uint256) scores;
         mapping(address => uint256) rewards;
         address[] participantList;
-    }
-
-    enum GameStatus {
-        Created,
-        Active,
-        Completed,
-        Cancelled
+        GameCategory category;
+        uint256 difficulty;
     }
 
     // State variables
     mapping(uint256 => Game) public games;
     mapping(address => uint256[]) public organizerGames;
     mapping(address => uint256[]) public participantGames;
+    mapping(uint256 => uint256) public difficultyMultipliers;
     
     uint256 public nextGameId = 1;
     uint256 public platformFeePercent = 250; // 2.5%
@@ -62,7 +71,7 @@ contract TriviaGame is ReentrancyGuard, Ownable, Pausable {
     
     event GameStarted(uint256 indexed gameId, uint256 startTime);
     event GameCompleted(uint256 indexed gameId, uint256 endTime);
-    event GameCancelled(uint256 indexed gameId);
+    event GameCancelled(uint256 indexed gameId, uint256 timestamp);
     
     event ParticipantJoined(uint256 indexed gameId, address indexed participant);
     event ScoreUpdated(uint256 indexed gameId, address indexed participant, uint256 score);
@@ -86,9 +95,14 @@ contract TriviaGame is ReentrancyGuard, Ownable, Pausable {
         _;
     }
 
-    constructor(address _feeRecipient) {
+    constructor(address _feeRecipient) Ownable(msg.sender) {
         require(_feeRecipient != address(0), "Invalid fee recipient");
         feeRecipient = _feeRecipient;
+        
+        // Initialize default difficulty multipliers
+        difficultyMultipliers[1] = 100; // 1x
+        difficultyMultipliers[2] = 150; // 1.5x
+        difficultyMultipliers[3] = 200; // 2x
     }
 
     /**
@@ -96,15 +110,20 @@ contract TriviaGame is ReentrancyGuard, Ownable, Pausable {
      * @param _token ERC20 token address for rewards
      * @param _rewardPerQuestion Reward amount per question
      * @param _totalQuestions Total number of questions in the game
+     * @param _category Game category
+     * @param _difficulty Difficulty level
      */
     function createGame(
         IERC20 _token,
         uint256 _rewardPerQuestion,
-        uint256 _totalQuestions
+        uint256 _totalQuestions,
+        GameCategory _category,
+        uint256 _difficulty
     ) external whenNotPaused nonReentrant returns (uint256) {
         require(address(_token) != address(0), "Invalid token address");
         require(_rewardPerQuestion >= MIN_REWARD, "Reward too small");
         require(_totalQuestions > 0 && _totalQuestions <= 50, "Invalid question count");
+        require(_difficulty >= 1 && _difficulty <= 3, "Invalid difficulty level");
 
         uint256 gameId = nextGameId++;
         uint256 totalStakeRequired = _rewardPerQuestion * _totalQuestions;
@@ -121,6 +140,8 @@ contract TriviaGame is ReentrancyGuard, Ownable, Pausable {
         game.totalStaked = totalStakeRequired;
         game.totalQuestions = _totalQuestions;
         game.status = GameStatus.Created;
+        game.category = _category;
+        game.difficulty = _difficulty;
 
         organizerGames[msg.sender].push(gameId);
 
@@ -128,6 +149,44 @@ contract TriviaGame is ReentrancyGuard, Ownable, Pausable {
         emit TokensStaked(gameId, msg.sender, totalStakeRequired);
 
         return gameId;
+    }
+
+    /**
+     * @dev Cancel a game and refund staked tokens (only organizer)
+     * @param _gameId Game ID to cancel
+     */
+    function cancelGame(uint256 _gameId) 
+        external 
+        whenNotPaused 
+        gameExists(_gameId) 
+        onlyOrganizer(_gameId) 
+        nonReentrant 
+    {
+        Game storage game = games[_gameId];
+        require(
+            game.status == GameStatus.Created || game.status == GameStatus.Active,
+            "Cannot cancel completed game"
+        );
+
+        // Refund staked tokens to organizer
+        if (game.totalStaked > 0) {
+            game.token.safeTransfer(game.organizer, game.totalStaked);
+            emit TokensWithdrawn(_gameId, game.organizer, game.totalStaked);
+        }
+
+        game.status = GameStatus.Cancelled;
+        emit GameCancelled(_gameId, block.timestamp);
+    }
+
+    /**
+     * @dev Set difficulty multiplier (only owner)
+     * @param _difficulty Difficulty level
+     * @param _multiplier Multiplier value (in basis points, e.g., 150 = 1.5x)
+     */
+    function setDifficultyMultiplier(uint256 _difficulty, uint256 _multiplier) external onlyOwner {
+        require(_difficulty >= 1 && _difficulty <= 3, "Invalid difficulty level");
+        require(_multiplier >= 50 && _multiplier <= 500, "Invalid multiplier range");
+        difficultyMultipliers[_difficulty] = _multiplier;
     }
 
     /**
@@ -197,6 +256,7 @@ contract TriviaGame is ReentrancyGuard, Ownable, Pausable {
         for (uint256 i = 0; i < _participants.length; i++) {
             address participant = _participants[i];
             require(game.participants[participant], "Not a participant");
+            require(_scores[i] <= game.totalQuestions, "Score exceeds total questions");
             
             game.scores[participant] = _scores[i];
             emit ScoreUpdated(_gameId, participant, _scores[i]);
@@ -224,78 +284,24 @@ contract TriviaGame is ReentrancyGuard, Ownable, Pausable {
         require(_winners.length == _rewardAmounts.length, "Arrays length mismatch");
 
         Game storage game = games[_gameId];
-        uint256 totalRewards = 0;
-
-        // Calculate total rewards to distribute
-        for (uint256 i = 0; i < _rewardAmounts.length; i++) {
-            totalRewards += _rewardAmounts[i];
-        }
-
+        uint256 totalRewards = _calculateTotalRewards(_rewardAmounts);
         require(totalRewards <= game.totalStaked, "Insufficient staked tokens");
 
-        // Calculate platform fee
-        uint256 platformFee = (totalRewards * platformFeePercent) / 10000;
-        uint256 netRewards = totalRewards - platformFee;
+        (uint256 platformFee, uint256 netRewards) = _calculateFeesAndNetRewards(totalRewards);
 
-        // Distribute rewards
-        uint256 distributedRewards = 0;
-        for (uint256 i = 0; i < _winners.length; i++) {
-            address winner = _winners[i];
-            require(game.participants[winner], "Winner not a participant");
-            
-            uint256 rewardAmount = (_rewardAmounts[i] * netRewards) / totalRewards;
-            if (rewardAmount > 0) {
-                game.rewards[winner] = rewardAmount;
-                game.token.safeTransfer(winner, rewardAmount);
-                distributedRewards += rewardAmount;
-                
-                emit RewardDistributed(_gameId, winner, rewardAmount);
-            }
-        }
+        uint256 distributedRewards = _distributeRewards(game, _gameId, _winners, _rewardAmounts, netRewards, totalRewards);
 
         // Transfer platform fee
         if (platformFee > 0) {
-            game.token.safeTransfer(feeRecipient, platformFee);
+            _transferPlatformFee(game, platformFee);
         }
 
-        // Return remaining tokens to organizer
-        uint256 remaining = game.totalStaked - distributedRewards - platformFee;
-        if (remaining > 0) {
-            game.token.safeTransfer(game.organizer, remaining);
-            emit TokensWithdrawn(_gameId, game.organizer, remaining);
-        }
+        _handleRemainingTokens(game, _gameId, distributedRewards, platformFee);
 
         game.status = GameStatus.Completed;
         game.endTime = block.timestamp;
 
         emit GameCompleted(_gameId, block.timestamp);
-    }
-
-    /**
-     * @dev Cancel a game and refund staked tokens (only organizer)
-     * @param _gameId Game ID to cancel
-     */
-    function cancelGame(uint256 _gameId) 
-        external 
-        whenNotPaused 
-        gameExists(_gameId) 
-        onlyOrganizer(_gameId) 
-        nonReentrant 
-    {
-        Game storage game = games[_gameId];
-        require(
-            game.status == GameStatus.Created || game.status == GameStatus.Active,
-            "Cannot cancel completed game"
-        );
-
-        // Refund staked tokens to organizer
-        if (game.totalStaked > 0) {
-            game.token.safeTransfer(game.organizer, game.totalStaked);
-            emit TokensWithdrawn(_gameId, game.organizer, game.totalStaked);
-        }
-
-        game.status = GameStatus.Cancelled;
-        emit GameCancelled(_gameId);
     }
 
     /**
@@ -325,7 +331,9 @@ contract TriviaGame is ReentrancyGuard, Ownable, Pausable {
             uint256 totalParticipants,
             GameStatus status,
             uint256 startTime,
-            uint256 endTime
+            uint256 endTime,
+            GameCategory category,
+            uint256 difficulty
         ) 
     {
         Game storage game = games[_gameId];
@@ -338,7 +346,9 @@ contract TriviaGame is ReentrancyGuard, Ownable, Pausable {
             game.totalParticipants,
             game.status,
             game.startTime,
-            game.endTime
+            game.endTime,
+            game.category,
+            game.difficulty
         );
     }
 
@@ -394,6 +404,14 @@ contract TriviaGame is ReentrancyGuard, Ownable, Pausable {
         return participantGames[_participant];
     }
 
+    function getDifficultyMultiplier(uint256 _difficulty) 
+        external 
+        view 
+        returns (uint256) 
+    {
+        return difficultyMultipliers[_difficulty];
+    }
+
     // Admin functions
     function setPlatformFee(uint256 _feePercent) external onlyOwner {
         require(_feePercent <= 1000, "Fee too high"); // Max 10%
@@ -411,5 +429,126 @@ contract TriviaGame is ReentrancyGuard, Ownable, Pausable {
 
     function unpause() external onlyOwner {
         _unpause();
+    }
+
+    /**
+     * @dev Internal helper function to distribute reward to a single winner.
+     * @param game Game storage reference
+     * @param gameId Game ID
+     * @param winner Address of the winner
+     * @param amount Reward amount to distribute
+     */
+    function _distributeRewardToWinner(
+        Game storage game,
+        uint256 gameId,
+        address winner,
+        uint256 amount
+    ) internal {
+        game.rewards[winner] = amount;
+        game.token.safeTransfer(winner, amount);
+        emit RewardDistributed(gameId, winner, amount);
+    }
+
+    /**
+     * @dev Internal helper function to transfer platform fee.
+     * @param game Game storage reference
+     * @param amount Amount of platform fee to transfer
+     */
+    function _transferPlatformFee(
+        Game storage game,
+        uint256 amount
+    ) internal {
+        game.token.safeTransfer(feeRecipient, amount);
+    }
+
+    /**
+     * @dev Internal helper function to return remaining tokens to organizer.
+     * @param game Game storage reference
+     * @param gameId Game ID
+     * @param amount Amount of remaining tokens to return
+     */
+    function _returnRemainingTokens(
+        Game storage game,
+        uint256 gameId,
+        uint256 amount
+    ) internal {
+        game.token.safeTransfer(game.organizer, amount);
+        emit TokensWithdrawn(gameId, game.organizer, amount);
+    }
+
+    /**
+     * @dev Internal helper function to calculate total rewards.
+     * @param _rewardAmounts Array of reward amounts
+     * @return totalRewards Total sum of reward amounts
+     */
+    function _calculateTotalRewards(uint256[] calldata _rewardAmounts) internal pure returns (uint256) {
+        uint256 totalRewards = 0;
+        for (uint256 i = 0; i < _rewardAmounts.length; i++) {
+            totalRewards += _rewardAmounts[i];
+        }
+        return totalRewards;
+    }
+
+    /**
+     * @dev Internal helper function to calculate platform fee and net rewards.
+     * @param _totalRewards Total rewards before fee deduction
+     * @return platformFee Calculated platform fee
+     * @return netRewards Calculated net rewards after fee deduction
+     */
+    function _calculateFeesAndNetRewards(uint256 _totalRewards) internal view returns (uint256, uint256) {
+        uint256 platformFee = (_totalRewards * platformFeePercent) / 10000;
+        uint256 netRewards = _totalRewards - platformFee;
+        return (platformFee, netRewards);
+    }
+
+    /**
+     * @dev Internal helper function to distribute rewards to multiple winners.
+     * @param game Game storage reference
+     * @param gameId Game ID
+     * @param winners Array of winner addresses
+     * @param rewardAmounts Array of corresponding reward amounts (proportional to total rewards)
+     * @param netRewards Net rewards available for distribution after platform fee
+     * @param totalRewards Total rewards before fee deduction
+     * @return distributedRewards Total amount of rewards distributed
+     */
+    function _distributeRewards(
+        Game storage game,
+        uint256 gameId,
+        address[] calldata winners,
+        uint256[] calldata rewardAmounts,
+        uint256 netRewards,
+        uint256 totalRewards
+    ) internal returns (uint256) {
+        uint256 distributedRewards = 0;
+        for (uint256 i = 0; i < winners.length; i++) {
+            address winner = winners[i];
+            require(game.participants[winner], "Winner not a participant");
+            
+            uint256 rewardAmount = (rewardAmounts[i] * netRewards) / totalRewards;
+            if (rewardAmount > 0) {
+                _distributeRewardToWinner(game, gameId, winner, rewardAmount);
+                distributedRewards += rewardAmount;
+            }
+        }
+        return distributedRewards;
+    }
+
+    /**
+     * @dev Internal helper function to handle remaining tokens (return to organizer).
+     * @param game Game storage reference
+     * @param gameId Game ID
+     * @param distributedRewards Amount of rewards already distributed
+     * @param platformFee Amount of platform fee collected
+     */
+    function _handleRemainingTokens(
+        Game storage game,
+        uint256 gameId,
+        uint256 distributedRewards,
+        uint256 platformFee
+    ) internal {
+        uint256 remaining = game.totalStaked - distributedRewards - platformFee;
+        if (remaining > 0) {
+            _returnRemainingTokens(game, gameId, remaining);
+        }
     }
 }

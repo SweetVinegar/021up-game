@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect } from 'react';
 import { GameRoom, Question, Participant, Answer, User } from '../types';
 import { gameService } from '../services/gameService';
 import { supabase } from '../lib/supabase';
+import { ethers } from 'ethers';
+import { QUIZ_TOKEN_ABI, blockchainService } from '../lib/blockchain';
 
 export const useGameState = () => {
   const [gameRoom, setGameRoom] = useState<GameRoom | null>(null);
@@ -11,82 +13,93 @@ export const useGameState = () => {
   const connectWallet = useCallback(async () => {
     try {
       setLoading(true);
-      // 模擬錢包連接 - 實際應用中會使用 MetaMask
-      const addresses = [
-        '0x1234567890123456789012345678901234567890',
-        '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
-        '0x9876543210987654321098765432109876543210',
-      ];
-      const names = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve'];
-      
-      const randomAddress = addresses[Math.floor(Math.random() * addresses.length)];
-      const randomName = names[Math.floor(Math.random() * names.length)];
-      
-      // 創建一個臨時用戶來模擬錢包連接
-      // 在實際應用中，這裡會使用真實的錢包簽名來驗證身份
-      const tempEmail = `${randomAddress.slice(2, 10)}@wallet.local`;
-      const tempPassword = randomAddress; // 使用地址作為密碼（僅用於演示）
-      
-      try {
-        // 嘗試登入現有用戶
-        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-          email: tempEmail,
-          password: tempPassword,
-        });
-
-        if (signInError && signInError.message.includes('Invalid login credentials')) {
-          // 如果用戶不存在，創建新用戶
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: tempEmail,
-            password: tempPassword,
-            options: {
-              data: {
-                wallet_address: randomAddress,
-                display_name: randomName,
-              }
-            }
-          });
-
-          if (signUpError) {
-            throw signUpError;
-          }
-        } else if (signInError) {
-          throw signInError;
-        }
-      } catch (authError) {
-        console.error('Authentication error:', authError);
-        // 如果認證失敗，仍然設置用戶但不進行 Supabase 操作
-        setUser({
-          address: randomAddress,
-          name: randomName,
-          balance: 1000 + Math.floor(Math.random() * 5000),
-        });
+      // 實際錢包連接邏輯
+      if (!window.ethereum) {
+        alert('請安裝 MetaMask 或其他兼容的以太坊錢包！');
         return;
       }
-      
+
+      // 切换到 Sepolia 测试网
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0xaa36a7' }], // Sepolia 的 chainId
+        });
+      } catch (switchError: any) {
+        // 如果网络未添加，则添加 Sepolia 网络
+        if (switchError.code === 4902) {
+          try {
+            await window.ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [{
+                chainId: '0xaa36a7',
+                chainName: 'Sepolia Testnet',
+                nativeCurrency: {
+                  name: 'Sepolia Ether',
+                  symbol: 'ETH',
+                  decimals: 18
+                },
+                rpcUrls: ['https://sepolia.infura.io/v3/'],
+                blockExplorerUrls: ['https://sepolia.etherscan.io']
+              }],
+            });
+          } catch (addError) {
+            console.error('添加 Sepolia 网络失败:', addError);
+            throw new Error('请手动添加 Sepolia 测试网');
+          }
+        } else {
+          console.error('切换网络失败:', switchError);
+          throw new Error('请手动切换到 Sepolia 测试网');
+        }
+      }
+
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const address = await signer.getAddress();
+      const quizTokenContract = new ethers.Contract(
+        '0xb24307c8a40a0dc5609674456b58148d65fbf50c', // QUIZ Token address
+        QUIZ_TOKEN_ABI, // QUIZ Token ABI
+        provider
+      );
+      const quizBalance = await quizTokenContract.balanceOf(address);
+      const formattedQuizBalance = parseFloat(ethers.formatEther(quizBalance));
+
+      // 嘗試從 Supabase 獲取用戶資料
+      const { data: userData, error: userError } = await supabase
+        .from('profiles')
+        .select('display_name')
+        .eq('wallet_address', address)
+        .single();
+
+      let displayName = userData?.display_name || '匿名用戶';
+
+      // 如果用戶不存在於 Supabase，則創建一個新用戶
+      if (userError && userError.code === 'PGRST116') { // 116 表示沒有找到行
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email: `${address.slice(2, 10)}@wallet.local`, // 使用地址作為唯一郵箱
+          password: address, // 僅用於演示，實際應用中應使用更安全的認證方式
+          options: {
+            data: {
+              wallet_address: address,
+              display_name: displayName,
+            }
+          }
+        });
+
+        if (signUpError) {
+          console.error('Supabase 註冊失敗:', signUpError);
+          throw signUpError;
+        }
+      }
+
       setUser({
-        address: randomAddress,
-        name: randomName,
-        balance: 1000 + Math.floor(Math.random() * 5000),
+        address: address,
+        name: displayName,
+        balance: formattedQuizBalance,
       });
     } catch (error) {
       console.error('連接錢包失敗:', error);
-      // 即使認證失敗，也允許用戶繼續使用應用（離線模式）
-      const addresses = [
-        '0x1234567890123456789012345678901234567890',
-        '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
-        '0x9876543210987654321098765432109876543210',
-      ];
-      const names = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve'];
-      
-      const randomAddress = addresses[Math.floor(Math.random() * addresses.length)];
-      const randomName = names[Math.floor(Math.random() * names.length)];
-      
-      setUser({
-        address: randomAddress,
-        name: randomName,
-        balance: 1000 + Math.floor(Math.random() * 5000),
-      });
+      alert('連接錢包失敗，請檢查您的錢包設置。');
     } finally {
       setLoading(false);
     }
@@ -104,6 +117,24 @@ export const useGameState = () => {
 
   const createGame = useCallback(async (gameData: Partial<GameRoom>) => {
     if (!user) return;
+
+    let provider: ethers.BrowserProvider;
+    let signer: ethers.Signer;
+    let address: string;
+
+    try {
+      if (!window.ethereum) {
+        alert('請安裝 MetaMask 或其他兼容的以太坊錢包！');
+        return;
+      }
+      provider = new ethers.BrowserProvider(window.ethereum);
+      signer = await provider.getSigner();
+      address = await signer.getAddress();
+    } catch (error) {
+      console.error('獲取錢包信息失敗:', error);
+      alert('無法獲取錢包信息，請確保錢包已連接。');
+      return;
+    }
 
     try {
       setLoading(true);
@@ -145,9 +176,29 @@ export const useGameState = () => {
       // 從資料庫載入完整遊戲資料
       await loadGame(gameId);
       
-      // 扣除質押代幣
+      // 實際質押代幣
       const totalStaked = (gameData.tokenReward || 0) * (gameData.questions?.length || 0);
-      setUser(prev => prev ? { ...prev, balance: prev.balance - totalStaked } : null);
+
+      try {
+        // 使用 blockchainService 進行代幣批准和遊戲創建
+        await blockchainService.createGame(
+          '0xb24307c8a40a0dc5609674456b58148d65fbf50c', // QUIZ Token address
+          totalStaked.toString(),
+          gameData.questions?.length || 0,
+          0, // category (placeholder)
+          0  // difficulty (placeholder)
+        );
+        
+        // 更新用戶餘額
+        const newBalance = await blockchainService.getTokenBalance(address);
+        setUser(prev => prev ? { 
+          ...prev, 
+          balance: parseFloat(newBalance) 
+        } : null);
+      } catch (error) {
+        console.error('質押代幣失敗:', error);
+        throw new Error('質押代幣失敗，請確保餘額充足');
+      }
       
     } catch (error) {
       console.error('創建遊戲失敗:', error);

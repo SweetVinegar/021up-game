@@ -44,7 +44,6 @@ A decentralized trivia game platform where organizers can create games, stake ER
 ### Blockchain
 - **Solidity 0.8.19** smart contracts
 - **OpenZeppelin** security standards
-- **Hardhat** development framework
 - **Multi-chain support** (Ethereum, Polygon, BSC)
 
 ## Smart Contracts
@@ -105,14 +104,27 @@ ERC20 token with additional features:
    - Run the migration file to set up the database schema
    - Update environment variables
 
-4. **Deploy Smart Contracts**
-   ```bash
-   cd contracts
-   cp .env.example .env
-   # Edit .env with your configuration
-   npx hardhat compile
-   npx hardhat run scripts/deploy.js --network sepolia
-   ```
+4. **Deploy Smart Contracts (Remix IDE)**
+   - **QuizToken.sol**: `0xb24307c8a40a0dc5609674456b58148d65fbf50c`
+   - **TriviaGame.sol**: `0x78afd8e9d94da6c232cab43fe88131463ea3fa78`
+
+   **Remix IDE 部署步骤**：
+   1.  打开 Remix IDE (remix.ethereum.org)。
+   2.  在文件浏览器中导入 `QuizToken.sol` 和 `TriviaGame.sol` 文件。
+   3.  编译两个合约（选择合适的 Solidity 版本，例如 0.8.19）。
+   4.  在部署和运行交易面板中，选择 `QuizToken.sol` 合约，确保选择正确的环境（例如 Injected Provider - MetaMask 或 Remix VM）。部署 `QuizToken` 合约。
+   5.  部署成功后，复制 `QuizToken` 合约的地址。
+   6.  选择 `TriviaGame.sol` 合约进行部署。在部署参数中，`_quizTokenAddress` 参数填写刚刚复制的 `QuizToken` 合约地址，`_feeRecipient` 参数填写你的接收费用地址（例如你的 MetaMask 地址）。
+   7.  部署 `TriviaGame` 合约。
+   8.  部署完成后，需要将 `TriviaGame` 合约设置为 `QuizToken` 的铸币者（Minter）。在 Remix 中与已部署的 `QuizToken` 合约交互，调用 `addMinter` 函数，并传入 `TriviaGame` 合约的地址。
+   9.  为了测试，可以向 `TriviaGame` 合约转移一些 `QuizToken`。在 Remix 中与已部署的 `QuizToken` 合约交互，调用 `transfer` 函数，将一定数量的 `QuizToken` 转移到 `TriviaGame` 合约地址。
+
+   **合约与网站互动**：
+   - 网站前端通过 `ethers.js` 库与部署在区块链上的 `TriviaGame` 和 `QuizToken` 智能合约进行交互。
+   - `src/lib/blockchain.ts` 文件中定义了合约的 ABI 和地址，前端应用通过这些信息调用合约的函数，例如创建游戏、加入游戏、提交答案、分发奖励等。
+   - `QuizToken` 合约负责管理游戏中的代币，包括铸造、销毁和转移。
+   - `TriviaGame` 合约包含了游戏的核心逻辑，处理游戏状态、玩家交互和奖励分配。
+   - 前端会读取 `VITE_TRIVIA_GAME_ADDRESS` 和 `VITE_QUIZ_TOKEN_ADDRESS` 环境变量来获取部署的合约地址。在 Remix 部署后，你需要手动更新这些环境变量或直接在代码中配置合约地址，以便前端能够正确连接到已部署的合约。
 
 5. **Configure Environment**
    ```bash
@@ -144,28 +156,7 @@ ERC20 token with additional features:
 4. **Earn Rewards**: Receive tokens based on performance
 5. **View History**: Check past games and earnings
 
-## Smart Contract Deployment
 
-### Supported Networks
-- **Ethereum Mainnet**
-- **Ethereum Sepolia** (Testnet)
-- **Polygon**
-- **Binance Smart Chain**
-
-### Deployment Commands
-```bash
-# Compile contracts
-npx hardhat compile
-
-# Deploy to testnet
-npx hardhat run scripts/deploy.js --network sepolia
-
-# Verify contracts
-npx hardhat verify --network sepolia DEPLOYED_ADDRESS
-
-# Run tests
-npx hardhat test
-```
 
 ## Security Features
 

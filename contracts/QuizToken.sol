@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title QuizToken
@@ -18,16 +18,16 @@ contract QuizToken is ERC20, ERC20Burnable, Ownable, Pausable {
     
     event MinterAdded(address indexed minter);
     event MinterRemoved(address indexed minter);
-
+    
     modifier onlyMinter() {
         require(minters[msg.sender] || msg.sender == owner(), "Not authorized to mint");
         _;
     }
-
-    constructor() ERC20("QuizChain Token", "QUIZ") {
+    
+    constructor() ERC20("QuizChain Token", "QUIZ") Ownable(msg.sender) {
         _mint(msg.sender, INITIAL_SUPPLY);
     }
-
+    
     /**
      * @dev Mint tokens to specified address
      * @param to Address to mint tokens to
@@ -37,7 +37,7 @@ contract QuizToken is ERC20, ERC20Burnable, Ownable, Pausable {
         require(totalSupply() + amount <= MAX_SUPPLY, "Exceeds max supply");
         _mint(to, amount);
     }
-
+    
     /**
      * @dev Add a minter address
      * @param minter Address to add as minter
@@ -47,7 +47,7 @@ contract QuizToken is ERC20, ERC20Burnable, Ownable, Pausable {
         minters[minter] = true;
         emit MinterAdded(minter);
     }
-
+    
     /**
      * @dev Remove a minter address
      * @param minter Address to remove as minter
@@ -56,32 +56,32 @@ contract QuizToken is ERC20, ERC20Burnable, Ownable, Pausable {
         minters[minter] = false;
         emit MinterRemoved(minter);
     }
-
+    
     /**
      * @dev Pause token transfers
      */
     function pause() external onlyOwner {
         _pause();
     }
-
+    
     /**
      * @dev Unpause token transfers
      */
     function unpause() external onlyOwner {
         _unpause();
     }
-
+    
     /**
-     * @dev Override transfer function to include pause functionality
+     * @dev Override _update function to include pause functionality
      */
-    function _beforeTokenTransfer(
+    function _update(
         address from,
         address to,
-        uint256 amount
+        uint256 value
     ) internal override whenNotPaused {
-        super._beforeTokenTransfer(from, to, amount);
+        super._update(from, to, value);
     }
-
+    
     /**
      * @dev Batch transfer function for efficient distribution
      * @param recipients Array of recipient addresses
@@ -93,7 +93,7 @@ contract QuizToken is ERC20, ERC20Burnable, Ownable, Pausable {
     ) external whenNotPaused {
         require(recipients.length == amounts.length, "Arrays length mismatch");
         require(recipients.length > 0, "Empty arrays");
-
+        
         for (uint256 i = 0; i < recipients.length; i++) {
             require(recipients[i] != address(0), "Invalid recipient");
             _transfer(msg.sender, recipients[i], amounts[i]);
