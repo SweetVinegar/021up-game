@@ -52,39 +52,49 @@ export const useGameState = () => {
       const quizBalance = await quizTokenContract.balanceOf(address);
       const formattedQuizBalance = parseFloat(ethers.formatEther(quizBalance));
 
-      // Sign in with Ethereum
-      const message = `Sign in to 021up-game with your wallet. Nonce: ${Date.now()}`;
+      // Use a static message for signing to ensure a consistent password
+      const message = `Welcome to 021up-game! Sign this message to authenticate your wallet: ${address}`;
       const signature = await signer.signMessage(message);
       const password = ethers.keccak256(ethers.toUtf8Bytes(signature));
 
+      // Try to sign in
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: `${address}@021up.game`, // Using a fake email domain
+        email: `${address}@021up.game`,
         password: password,
       });
 
       let sessionUser = authData.user;
 
-      if (authError) {
-        if (authError.message.includes('Invalid login credentials')) {
-          // User not found, so sign them up
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: `${address}@021up.game`,
-            password: password,
-            options: {
-              data: {
-                wallet_address: address,
-                name: displayName || `Player_${address.slice(2, 6)}`,
-              },
+      // If user does not exist, sign them up
+      if (authError && authError.message.includes('Invalid login credentials')) {
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email: `${address}@021up.game`,
+          password: password,
+          options: {
+            data: {
+              wallet_address: address,
+              name: displayName || `Player_${address.slice(2, 6)}`,
             },
-          });
+          },
+        });
 
-          if (signUpError) {
+        if (signUpError) {
+          // If sign-up fails because user already exists (race condition), try signing in again.
+          if (signUpError.message.includes('User already registered')) {
+             const { data: retryAuthData, error: retryAuthError } = await supabase.auth.signInWithPassword({
+                email: `${address}@021up.game`,
+                password: password,
+              });
+              if (retryAuthError) throw new Error(`登入重試失敗: ${retryAuthError.message}`);
+              sessionUser = retryAuthData.user;
+          } else {
             throw new Error(`註冊失敗: ${signUpError.message}`);
           }
-          sessionUser = signUpData.user;
         } else {
-          throw new Error(`登入失敗: ${authError.message}`);
+          sessionUser = signUpData.user;
         }
+      } else if (authError) {
+        throw new Error(`登入失敗: ${authError.message}`);
       }
 
       if (!sessionUser) {

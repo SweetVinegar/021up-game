@@ -154,26 +154,51 @@ CREATE POLICY "Organizers can update their games"
   USING (organizer_address = auth.jwt() ->> 'wallet_address');
 
 -- Questions policies
+-- Questions policies
 CREATE POLICY "Anyone can view questions for active games"
   ON questions
   FOR SELECT
   TO authenticated
   USING (
     EXISTS (
-      SELECT 1 FROM games 
-      WHERE games.id = questions.game_id 
+      SELECT 1 FROM games
+      WHERE games.id = questions.game_id
       AND games.status IN ('active', 'completed')
     )
   );
 
-CREATE POLICY "Organizers can manage questions for their games"
+CREATE POLICY "Organizers can insert questions for their games"
   ON questions
-  FOR ALL
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM games
+      WHERE games.id = questions.game_id
+      AND games.organizer_address = auth.jwt() ->> 'wallet_address'
+    )
+  );
+
+CREATE POLICY "Organizers can update questions for their games"
+  ON questions
+  FOR UPDATE
   TO authenticated
   USING (
     EXISTS (
-      SELECT 1 FROM games 
-      WHERE games.id = questions.game_id 
+      SELECT 1 FROM games
+      WHERE games.id = questions.game_id
+      AND games.organizer_address = auth.jwt() ->> 'wallet_address'
+    )
+  );
+
+CREATE POLICY "Organizers can delete questions for their games"
+  ON questions
+  FOR DELETE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM games
+      WHERE games.id = questions.game_id
       AND games.organizer_address = auth.jwt() ->> 'wallet_address'
     )
   );
