@@ -334,7 +334,7 @@ export function GamePage() {
   switch (gameRoom.status) {
     case 'waiting':
       return (
-        <div className="min-h-screen">
+      <div className="min-h-screen bg-gray-900">
           <GameHeader title="QuizChain" />
           <GameLobby
             gameRoom={gameRoom}
