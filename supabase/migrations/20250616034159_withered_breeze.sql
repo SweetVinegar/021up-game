@@ -145,7 +145,7 @@ CREATE POLICY "Organizers can create games"
   ON games
   FOR INSERT
   TO authenticated
-  WITH CHECK (true);
+  WITH CHECK (organizer_address = auth.jwt() ->> 'wallet_address');
 
 CREATE POLICY "Organizers can update their games"
   ON games
@@ -211,28 +211,39 @@ CREATE POLICY "Users can view answers for completed games"
     )
   );
 
-CREATE POLICY "Users can submit their own answers"
+CREATE POLICY "Users can submit answers for their participation"
   ON answers
   FOR INSERT
   TO authenticated
   WITH CHECK (
     EXISTS (
-      SELECT 1 FROM participants 
-      WHERE participants.id = answers.participant_id 
+      SELECT 1 FROM participants
+      WHERE participants.id = answers.participant_id
       AND participants.wallet_address = auth.jwt() ->> 'wallet_address'
     )
   );
 
 -- Token transactions policies
-CREATE POLICY "Users can view their transactions"
+CREATE POLICY "Users can view their own answers"
+  ON answers
+  FOR SELECT
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM participants
+      WHERE participants.id = answers.participant_id
+      AND participants.wallet_address = auth.jwt() ->> 'wallet_address'
+    )
+  );
+
+CREATE POLICY "Users can view their own token transactions"
   ON token_transactions
   FOR SELECT
   TO authenticated
   USING (
-    participant_id IS NULL OR
     EXISTS (
-      SELECT 1 FROM participants 
-      WHERE participants.id = token_transactions.participant_id 
+      SELECT 1 FROM participants
+      WHERE participants.id = participant_id
       AND participants.wallet_address = auth.jwt() ->> 'wallet_address'
     )
   );

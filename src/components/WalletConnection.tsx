@@ -3,7 +3,7 @@ import { Wallet, LogOut } from 'lucide-react';
 
 interface WalletConnectionProps {
   user: { address: string; name: string; balance: number } | null;
-  onConnect: () => void;
+  onConnect: (displayName?: string) => void; // 允许传递 displayName
   onDisconnect: () => void;
 }
 
@@ -39,7 +39,10 @@ export const WalletConnection: React.FC<WalletConnectionProps> = ({
         </div>
       ) : (
         <button
-          onClick={onConnect}
+          onClick={() => {
+            const displayName = window.prompt('請輸入您的顯示名稱 (可選):');
+            onConnect(displayName || undefined); // 传递 displayName，如果用户取消则为 undefined
+          }}
           className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-6 py-3 rounded-full flex items-center gap-2 transition-all duration-300 transform hover:scale-105"
         >
           <Wallet className="w-5 h-5" />

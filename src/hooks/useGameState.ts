@@ -11,9 +11,10 @@ export const useGameState = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const connectWallet = useCallback(async () => {
+  const connectWallet = useCallback(async (displayName?: string) => {
     try {
       setLoading(true);
+      console.log('正在嘗試連接錢包...');
       // 實際錢包連接邏輯
       if (!window.ethereum) {
         alert('請安裝 MetaMask 或其他兼容的以太坊錢包！');
@@ -37,10 +38,12 @@ export const useGameState = () => {
         }
         throw switchError; // 重新拋出錯誤，讓上層捕獲並處理
       }
+      console.log('成功切換到 Sepolia 測試網。');
 
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      const address = await signer.getAddress();
+      const address = (await signer.getAddress()).toLowerCase();
+      console.log('已獲取錢包地址:', address);
       const quizTokenContract = new ethers.Contract(
         '0xb24307c8a40a0dc5609674456b58148d65fbf50c', // QUIZ Token address
         QUIZ_TOKEN_ABI, // QUIZ Token ABI
@@ -49,42 +52,53 @@ export const useGameState = () => {
       const quizBalance = await quizTokenContract.balanceOf(address);
       const formattedQuizBalance = parseFloat(ethers.formatEther(quizBalance));
 
-      // 嘗試從 Supabase 獲取用戶資料
-      const { data: userData, error: userError } = await supabase
-        .from('profiles')
-        .select('display_name')
-        .eq('wallet_address', address)
-        .single();
+      // Sign in with Ethereum
+      const message = `Sign in to 021up-game with your wallet. Nonce: ${Date.now()}`;
+      const signature = await signer.signMessage(message);
+      const password = ethers.keccak256(ethers.toUtf8Bytes(signature));
 
-      let displayName = userData?.display_name || '匿名用戶';
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: `${address}@021up.game`, // Using a fake email domain
+        password: password,
+      });
 
-      // 如果用戶不存在於 Supabase，則創建一個新用戶
-      if (userError && userError.code === 'PGRST116') { // 116 表示沒有找到行
-        const { error: signUpError } = await supabase.auth.signUp({
-          email: `${address.slice(2, 10)}@wallet.local`, // 使用地址作為唯一郵箱
-          password: address, // 僅用於演示，實際應用中應使用更安全的認證方式
-          options: {
-            data: {
-              wallet_address: address,
-              display_name: displayName,
-            }
+      let sessionUser = authData.user;
+
+      if (authError) {
+        if (authError.message.includes('Invalid login credentials')) {
+          // User not found, so sign them up
+          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            email: `${address}@021up.game`,
+            password: password,
+            options: {
+              data: {
+                wallet_address: address,
+                name: displayName || `Player_${address.slice(2, 6)}`,
+              },
+            },
+          });
+
+          if (signUpError) {
+            throw new Error(`註冊失敗: ${signUpError.message}`);
           }
-        });
-
-        if (signUpError) {
-          console.error('Supabase 註冊失敗:', signUpError);
-          throw signUpError;
+          sessionUser = signUpData.user;
+        } else {
+          throw new Error(`登入失敗: ${authError.message}`);
         }
+      }
+
+      if (!sessionUser) {
+        throw new Error('無法獲取用戶會話。');
       }
 
       setUser({
         address: address,
-        name: displayName,
+        name: sessionUser.user_metadata.name || displayName || `Player_${address.slice(2, 6)}`,
         balance: formattedQuizBalance,
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('連接錢包失敗:', error);
-      alert('連接錢包失敗，請檢查您的錢包設置。');
+      alert(`連接錢包失敗: ${error.message || error.toString()}。請檢查您的錢包設置和控制台。`);
     } finally {
       setLoading(false);
     }
