@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { GameRoom, Question, Participant, Answer, User } from '../types';
+import { GameRoom, Participant, Answer, User } from '../types';
 import { gameService } from '../services/gameService';
 import { supabase } from '../lib/supabase';
 import { ethers } from 'ethers';
@@ -26,31 +26,15 @@ export const useGameState = () => {
           params: [{ chainId: '0xaa36a7' }], // Sepolia 的 chainId
         });
       } catch (switchError: any) {
-        // 如果网络未添加，则添加 Sepolia 网络
+        console.error("切換網路失敗: 根據錯誤碼判斷，可能是用戶拒絕了切換，或者需要用戶在 MetaMask 中手動添加 Sepolia 測試網。", switchError);
         if (switchError.code === 4902) {
-          try {
-            await window.ethereum.request({
-              method: 'wallet_addEthereumChain',
-              params: [{
-                chainId: '0xaa36a7',
-                chainName: 'Sepolia Testnet',
-                nativeCurrency: {
-                  name: 'Sepolia Ether',
-                  symbol: 'ETH',
-                  decimals: 18
-                },
-                rpcUrls: ['https://sepolia.infura.io/v3/'],
-                blockExplorerUrls: ['https://sepolia.etherscan.io']
-              }],
-            });
-          } catch (addError) {
-            console.error('添加 Sepolia 网络失败:', addError);
-            throw new Error('请手动添加 Sepolia 测试网');
-          }
+          alert("請在 MetaMask 中添加 Sepolia 測試網。");
+        } else if (switchError.code === 4001) {
+          alert("您已拒絕切換網路。");
         } else {
-          console.error('切换网络失败:', switchError);
-          throw new Error('请手动切换到 Sepolia 测试网');
+          alert("無法切換到 Sepolia 測試網，請手動切換。");
         }
+        throw switchError; // 重新拋出錯誤，讓上層捕獲並處理
       }
 
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -75,7 +59,7 @@ export const useGameState = () => {
 
       // 如果用戶不存在於 Supabase，則創建一個新用戶
       if (userError && userError.code === 'PGRST116') { // 116 表示沒有找到行
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        const { error: signUpError } = await supabase.auth.signUp({
           email: `${address.slice(2, 10)}@wallet.local`, // 使用地址作為唯一郵箱
           password: address, // 僅用於演示，實際應用中應使用更安全的認證方式
           options: {
@@ -113,6 +97,52 @@ export const useGameState = () => {
     }
     setUser(null);
     setGameRoom(null);
+  }, []);
+
+  const fetchGameRoom = useCallback(async (gameId: string) => {
+    setLoading(true);
+    try {
+      // 首先尝试从 Supabase 获取完整的游戏数据
+      const room = await gameService.getGame(gameId);
+      if (room) {
+        // 转换数据库格式为前端格式
+        const gameRoom: GameRoom = {
+          id: room.id,
+          name: room.name,
+          organizer: room.organizer_address,
+          questions: room.questions.map((q: any) => ({
+            id: q.id,
+            question: q.question_text,
+            options: q.options,
+            correctAnswer: q.correct_answer,
+            timeLimit: q.time_limit,
+          })),
+          tokenReward: room.token_reward_per_question,
+          tokenSymbol: room.token_symbol,
+          status: room.status,
+          participants: room.participants.map((p: any) => ({
+            id: p.id,
+            address: p.wallet_address,
+            name: p.name,
+            score: p.score,
+            answers: [], // 稍後載入
+            tokensEarned: p.tokens_earned,
+          })),
+          currentQuestionIndex: room.current_question_index,
+          startTime: room.start_time ? new Date(room.start_time).getTime() : undefined,
+        };
+        setGameRoom(gameRoom);
+      } else {
+        alert("遊戲房間不存在。");
+        setGameRoom(null);
+      }
+    } catch (error) {
+      console.error("獲取遊戲房間失敗: ", error);
+      alert("獲取遊戲房間失敗，請檢查控制台。");
+      setGameRoom(null);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const createGame = useCallback(async (gameData: Partial<GameRoom>) => {
@@ -163,7 +193,7 @@ export const useGameState = () => {
       const gameId = await gameService.createGame({
         name: gameData.name || '',
         organizerAddress: user.address,
-        questions: gameData.questions?.map((q, index) => ({
+        questions: gameData.questions?.map((q) => ({
           question: q.question,
           options: q.options,
           correctAnswer: q.correctAnswer,
@@ -513,6 +543,6 @@ export const useGameState = () => {
     nextQuestion,
     completeGame,
     resetGame,
-    loadGame,
+    fetchGameRoom,
   };
 };

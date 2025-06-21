@@ -13,11 +13,13 @@ export interface GameRoom {
   questions: Question[];
   tokenReward: number;
   tokenSymbol: string;
-  status: 'setup' | 'waiting' | 'active' | 'completed';
+  status: GameRoomStatus;
   participants: Participant[];
   currentQuestionIndex: number;
   startTime?: number;
 }
+
+export type GameRoomStatus = 'setup' | 'waiting' | 'active' | 'completed' | 'cancelled' | 'unknown';
 
 export interface Participant {
   id: string;

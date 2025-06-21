@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { Gamepad2, Sparkles, BarChart3 } from 'lucide-react';
+import React from 'react';
+import { Gamepad2, Sparkles } from 'lucide-react';
 import { WalletConnection } from './components/WalletConnection';
 import { GameSetup } from './components/GameSetup';
 import { GameLobby } from './components/GameLobby';
@@ -7,8 +7,20 @@ import { GamePlay } from './components/GamePlay';
 import { GameResults } from './components/GameResults';
 import { GameDashboard } from './components/GameDashboard';
 import { useGameState } from './hooks/useGameState';
+import { BrowserRouter as Router, Routes, Route, useParams } from 'react-router-dom';
 
 function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/game/:gameId" element={<GamePage />} />
+      </Routes>
+    </Router>
+  );
+}
+
+function Home() {
   const {
     gameRoom,
     user,
@@ -27,7 +39,7 @@ function App() {
   const [currentView, setCurrentView] = React.useState<'game' | 'dashboard'>('game');
 
   // 自動推進問題
-  useEffect(() => {
+  React.useEffect(() => {
     if (gameRoom?.status === 'active' && gameRoom.participants.length > 0) {
       const allAnswered = gameRoom.participants.every(
         p => p.answers.length > gameRoom.currentQuestionIndex
@@ -199,7 +211,7 @@ function App() {
               gameRoom={gameRoom}
               isOrganizer={isOrganizer}
               onStartGame={startGame}
-              onJoinGame={joinGame}
+              onJoinGame={() => joinGame(gameRoom.id)}
               userAddress={user.address}
             />
           </div>
@@ -246,7 +258,11 @@ function App() {
                 onDisconnect={disconnectWallet}
               />
             </header>
-            <GameResults gameRoom={gameRoom} onNewGame={resetGame} />
+            <GameResults
+              gameRoom={gameRoom}
+              userAddress={user.address}
+              onResetGame={resetGame}
+            />
           </div>
         );
 
@@ -271,6 +287,173 @@ function App() {
       {renderCurrentView()}
     </div>
   );
+}
+
+
+
+function GamePage() {
+  const { gameId } = useParams();
+  const { 
+    gameRoom, 
+    user, 
+    loading, 
+    connectWallet, 
+    disconnectWallet, 
+    joinGame, 
+    startGame, 
+    submitAnswer, 
+    nextQuestion, 
+    completeGame, 
+    resetGame, 
+    fetchGameRoom 
+  } = useGameState();
+
+  React.useEffect(() => {
+    if (gameId && !gameRoom) {
+      fetchGameRoom(gameId);
+    }
+  }, [gameId, gameRoom, fetchGameRoom]);
+
+  React.useEffect(() => {
+    if (gameRoom?.status === 'active' && gameRoom.participants.length > 0) {
+      const allAnswered = gameRoom.participants.every(
+        p => p.answers.length > gameRoom.currentQuestionIndex
+      );
+      
+      if (allAnswered) {
+        const timer = setTimeout(() => {
+          if (gameRoom.currentQuestionIndex < gameRoom.questions.length - 1) {
+            nextQuestion();
+          } else {
+            completeGame();
+          }
+        }, 2000);
+        
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [gameRoom, nextQuestion, completeGame]);
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center text-white">載入中...</div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <div className="text-center max-w-2xl">
+          <div className="mb-8">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full mb-6">
+              <Gamepad2 className="w-10 h-10 text-white" />
+            </div>
+            <h1 className="text-5xl font-bold text-white mb-4">
+              Quiz<span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">Chain</span>
+            </h1>
+            <p className="text-xl text-white/70 mb-8">
+              參與問答遊戲並獲得加密貨幣獎勵！創建問題、質押代幣，讓最聰明的玩家獲勝。
+            </p>
+          </div>
+          
+          <WalletConnection
+            user={user}
+            onConnect={connectWallet}
+            onDisconnect={disconnectWallet}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (!gameRoom) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-white">
+        <p>遊戲不存在或載入失敗。</p>
+      </div>
+    );
+  }
+
+  const isOrganizer = gameRoom.organizer === user.address;
+
+  switch (gameRoom.status) {
+    case 'waiting':
+      return (
+        <div className="min-h-screen">
+          <header className="p-6 flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
+                <Gamepad2 className="w-6 h-6 text-white" />
+              </div>
+              <h1 className="text-2xl font-bold text-white">QuizChain</h1>
+            </div>
+            <WalletConnection
+              user={user}
+              onConnect={connectWallet}
+              onDisconnect={disconnectWallet}
+            />
+          </header>
+          <GameLobby
+            gameRoom={gameRoom}
+            isOrganizer={isOrganizer}
+            onStartGame={startGame}
+            onJoinGame={() => joinGame(gameId as string)}
+            userAddress={user.address}
+          />
+        </div>
+      );
+    case 'active':
+      return (
+        <div className="min-h-screen">
+          <header className="p-6 flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
+                <Gamepad2 className="w-6 h-6 text-white" />
+              </div>
+              <h1 className="text-2xl font-bold text-white">QuizChain</h1>
+            </div>
+            <WalletConnection
+              user={user}
+              onConnect={connectWallet}
+              onDisconnect={disconnectWallet}
+            />
+          </header>
+          <GamePlay
+            gameRoom={gameRoom}
+            userAddress={user.address}
+            onSubmitAnswer={submitAnswer}
+            onGameComplete={completeGame}
+          />
+        </div>
+      );
+    case 'completed':
+      return (
+        <div className="min-h-screen">
+          <header className="p-6 flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
+                <Gamepad2 className="w-6 h-6 text-white" />
+              </div>
+              <h1 className="text-2xl font-bold text-white">QuizChain</h1>
+            </div>
+            <WalletConnection
+              user={user}
+              onConnect={connectWallet}
+              onDisconnect={disconnectWallet}
+            />
+          </header>
+          <GameResults
+            gameRoom={gameRoom}
+            userAddress={user.address}
+            onResetGame={resetGame}
+          />
+        </div>
+      );
+    default:
+      return (
+        <div className="min-h-screen flex items-center justify-center text-white">
+          <p>未知遊戲狀態。</p>
+        </div>
+      );
+  }
 }
 
 export default App;

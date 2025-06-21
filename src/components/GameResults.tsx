@@ -1,13 +1,16 @@
 import React from 'react';
 import { Trophy, Coins, Medal, Users } from 'lucide-react';
 import { GameRoom } from '../types';
+import { useAccount } from 'wagmi';
 
 interface GameResultsProps {
   gameRoom: GameRoom;
-  onNewGame: () => void;
+  userAddress: string;
+  onResetGame: () => void;
 }
 
-export const GameResults: React.FC<GameResultsProps> = ({ gameRoom, onNewGame }) => {
+export const GameResults: React.FC<GameResultsProps> = ({ gameRoom, onResetGame }) => {
+  const { address } = useAccount();
   const sortedParticipants = [...gameRoom.participants].sort((a, b) => b.score - a.score);
   const totalTokensDistributed = gameRoom.participants.reduce((sum, p) => sum + p.tokensEarned, 0);
 
@@ -81,7 +84,7 @@ export const GameResults: React.FC<GameResultsProps> = ({ gameRoom, onNewGame })
             {sortedParticipants.map((participant, index) => (
               <div
                 key={participant.id}
-                className={`rounded-xl p-6 border transition-all duration-300 ${getRankBg(index)}`}
+                className={`rounded-xl p-6 border transition-all duration-300 ${getRankBg(index)} ${address && participant.address.toLowerCase() === address.toLowerCase() ? 'border-blue-500 ring-2 ring-blue-500' : ''}`}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
@@ -156,7 +159,7 @@ export const GameResults: React.FC<GameResultsProps> = ({ gameRoom, onNewGame })
         {/* Action Button */}
         <div className="text-center">
           <button
-            onClick={onNewGame}
+            onClick={onResetGame}
             className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-8 py-4 rounded-full font-semibold transition-all duration-300 transform hover:scale-105"
           >
             Create New Game

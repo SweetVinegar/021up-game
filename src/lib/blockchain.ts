@@ -1,4 +1,5 @@
 import { ethers } from 'ethers';
+import { GameRoom } from '../types';
 
 // Contract ABIs (simplified for demo)
 export const TRIVIA_GAME_ABI = [
@@ -186,7 +187,7 @@ export class BlockchainService {
   async getGameInfo(gameId: number) {
     if (!this.triviaGameContract) throw new Error('Contract not initialized');
     
-    const gameInfo = await this.triviaGameContract.getGame(gameId);
+    const gameInfo = await this.triviaGameContract!.getGame(gameId);
     return {
       organizer: gameInfo.organizer,
       token: gameInfo.token,
@@ -216,6 +217,57 @@ export class BlockchainService {
     if (!this.triviaGameContract) throw new Error('Contract not initialized');
     const reward = await this.triviaGameContract.getParticipantReward(gameId, address);
     return ethers.formatEther(reward);
+  }
+
+  private mapGameStatus(status: number): GameRoom['status'] {
+    switch (status) {
+      case 0: return 'waiting';
+      case 1: return 'active';
+      case 2: return 'completed';
+      case 3: return 'cancelled';
+      default: return 'unknown';
+    }
+  }
+
+  async getGameRoom(gameId: number): Promise<GameRoom | null> {
+    try {
+      if (!this.triviaGameContract) {
+        throw new Error('Trivia game contract not initialized');
+      }
+      const game = await this.triviaGameContract.getGame(gameId);
+
+      if (game.organizer === ethers.ZeroAddress) {
+        return null; // 遊戲不存在
+      }
+
+      let tokenSymbol = 'UNKNOWN';
+      if (this.quizTokenContract && game.token !== ethers.ZeroAddress) {
+        try {
+          const tokenContract = new ethers.Contract(game.token, QUIZ_TOKEN_ABI, this.provider);
+          tokenSymbol = await tokenContract.symbol();
+        } catch (e) {
+          console.warn(`Failed to get token symbol for ${game.token}:`, e);
+        }
+      }
+
+      // 構建 GameRoom 對象，只包含從區塊鏈可用的數據
+      return {
+        id: gameId.toString(),
+        name: '', // Name is not directly available from contract, will be fetched from Supabase
+        organizer: game.organizer,
+        questions: [], // Questions are not directly available from contract, will be fetched from Supabase
+        tokenReward: Number(ethers.formatEther(game.rewardPerQuestion)),
+        tokenSymbol: tokenSymbol,
+        status: this.mapGameStatus(Number(game.status)),
+        participants: [], // Participants are not directly available from contract, will be fetched from Supabase
+        currentQuestionIndex: 0, // Not directly available from contract, will be fetched from Supabase
+        startTime: Number(game.startTime) > 0 ? Number(game.startTime) * 1000 : undefined, // Convert to milliseconds
+      };
+
+    } catch (error) {
+      console.error("獲取遊戲房間失敗: ", error);
+      return null;
+    }
   }
 }
 
