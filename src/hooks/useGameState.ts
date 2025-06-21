@@ -65,8 +65,9 @@ export const useGameState = () => {
 
       let sessionUser = authData.user;
 
-      // If user does not exist, sign them up
-      if (authError && authError.message.includes('Invalid login credentials')) {
+      // If user does not exist or invalid credentials, try to sign them up
+      if (authError && (authError.message.includes('Invalid login credentials') || authError.message.includes('User not found'))) {
+        console.log('用戶不存在或憑證無效，嘗試註冊...');
         const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email: `${address}@021up.game`,
           password: password,
@@ -81,12 +82,13 @@ export const useGameState = () => {
         if (signUpError) {
           // If sign-up fails because user already exists (race condition), try signing in again.
           if (signUpError.message.includes('User already registered')) {
-             const { data: retryAuthData, error: retryAuthError } = await supabase.auth.signInWithPassword({
-                email: `${address}@021up.game`,
-                password: password,
-              });
-              if (retryAuthError) throw new Error(`登入重試失敗: ${retryAuthError.message}`);
-              sessionUser = retryAuthData.user;
+            console.log('用戶已註冊，嘗試重新登入...');
+            const { data: retryAuthData, error: retryAuthError } = await supabase.auth.signInWithPassword({
+              email: `${address}@021up.game`,
+              password: password,
+            });
+            if (retryAuthError) throw new Error(`登入重試失敗: ${retryAuthError.message}`);
+            sessionUser = retryAuthData.user;
           } else {
             throw new Error(`註冊失敗: ${signUpError.message}`);
           }
@@ -97,8 +99,32 @@ export const useGameState = () => {
         throw new Error(`登入失敗: ${authError.message}`);
       }
 
+      // Ensure wallet_address is in user_metadata
+      if (sessionUser && (!sessionUser.user_metadata || sessionUser.user_metadata.wallet_address !== address)) {
+        console.log('更新用戶元數據中的錢包地址...');
+        const { data: updateData, error: updateError } = await supabase.auth.updateUser({
+          data: {
+            wallet_address: address,
+            name: sessionUser.user_metadata?.name || displayName || `Player_${address.slice(2, 6)}`,
+          },
+        });
+        if (updateError) {
+          console.warn('更新用戶元數據失敗:', updateError.message);
+        } else if (updateData.user) {
+          sessionUser = updateData.user;
+        }
+      }
+
       if (!sessionUser) {
         throw new Error('無法獲取用戶會話。');
+      }
+
+      // 强制刷新会话，确保 JWT 包含最新的 user_metadata
+      const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.getSession();
+      if (refreshError) {
+        console.warn('刷新会话失败:', refreshError.message);
+      } else if (refreshedSession && refreshedSession.user) {
+        sessionUser = refreshedSession.user;
       }
 
       setUser({

@@ -172,12 +172,8 @@ CREATE POLICY "Organizers can insert questions for their games"
   FOR INSERT
   TO authenticated
   WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM games
-      WHERE games.id = questions.game_id
-      AND games.organizer_address = auth.jwt() ->> 'wallet_address'
-    )
-  );
+    (SELECT organizer_address FROM games WHERE id = questions.game_id) = auth.jwt() ->> 'wallet_address'
+  ); -- Added a comment to force a change
 
 CREATE POLICY "Organizers can update questions for their games"
   ON questions
