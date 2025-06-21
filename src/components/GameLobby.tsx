@@ -6,7 +6,7 @@ interface GameLobbyProps {
   gameRoom: GameRoom;
   isOrganizer: boolean;
   onStartGame: () => void;
-  onJoinGame: (playerName: string) => void;
+  onJoinGame: (gameId: string, participantAddress: string, participantName: string) => Promise<void>;
   userAddress: string;
 }
 
@@ -22,7 +22,7 @@ export const GameLobby: React.FC<GameLobbyProps> = ({
 
   const handleJoin = () => {
     if (playerName.trim()) {
-      onJoinGame(playerName.trim());
+      onJoinGame(gameRoom.id, userAddress, playerName.trim());
     }
   };
 

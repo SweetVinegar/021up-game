@@ -255,6 +255,7 @@ export class BlockchainService {
         id: gameId.toString(),
         name: '', // Name is not directly available from contract, will be fetched from Supabase
         organizer: game.organizer,
+        organizerAddress: game.organizer,
         questions: [], // Questions are not directly available from contract, will be fetched from Supabase
         tokenReward: Number(ethers.formatEther(game.rewardPerQuestion)),
         tokenSymbol: tokenSymbol,

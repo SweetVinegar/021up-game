@@ -3,7 +3,7 @@ import { Plus, Trash2, Play, Coins } from 'lucide-react';
 import { Question, GameRoom } from '../types';
 
 interface GameSetupProps {
-  onCreateGame: (gameData: Partial<GameRoom>) => void;
+  onCreateGame: (gameData: Partial<GameRoom>) => Promise<string | undefined>;
   userBalance: number;
 }
 
@@ -44,15 +44,16 @@ export const GameSetup: React.FC<GameSetupProps> = ({ onCreateGame, userBalance 
     setCurrentQuestion({ ...currentQuestion, options: newOptions });
   };
 
-  const createGame = () => {
+  const createGame = async () => {
     if (gameName && questions.length > 0 && tokenReward <= userBalance) {
-      onCreateGame({
+      return await onCreateGame({
         name: gameName,
         questions,
         tokenReward,
         tokenSymbol: 'QUIZ',
       });
     }
+    return undefined; // Ensure a return value for all paths
   };
 
   const totalTokens = tokenReward * questions.length;

@@ -3,7 +3,8 @@ import { GameRoom, Participant, Answer, User } from '../types';
 import { gameService } from '../services/gameService';
 import { supabase } from '../lib/supabase';
 import { ethers } from 'ethers';
-import { QUIZ_TOKEN_ABI, blockchainService } from '../lib/blockchain';
+import { QUIZ_TOKEN_ABI } from '../lib/blockchain';
+
 
 export const useGameState = () => {
   const [gameRoom, setGameRoom] = useState<GameRoom | null>(null);
@@ -99,17 +100,23 @@ export const useGameState = () => {
     setGameRoom(null);
   }, []);
 
-  const fetchGameRoom = useCallback(async (gameId: string) => {
+  const loadGame = useCallback(async (gameId: string) => {
     setLoading(true);
     try {
-      // 首先尝试从 Supabase 获取完整的游戏数据
+      // 检查是否为本地游戏
+      if (gameId.startsWith('local-')) {
+        // 对于本地游戏，不从 Supabase 加载，直接返回
+        setLoading(false);
+        return;
+      }
+
       const room = await gameService.getGame(gameId);
       if (room) {
-        // 转换数据库格式为前端格式
         const gameRoom: GameRoom = {
           id: room.id,
           name: room.name,
           organizer: room.organizer_address,
+          organizerAddress: room.organizer_address,
           questions: room.questions.map((q: any) => ({
             id: q.id,
             question: q.question_text,
@@ -125,13 +132,17 @@ export const useGameState = () => {
             address: p.wallet_address,
             name: p.name,
             score: p.score,
-            answers: [], // 稍後載入
+            answers: [],
             tokensEarned: p.tokens_earned,
           })),
           currentQuestionIndex: room.current_question_index,
           startTime: room.start_time ? new Date(room.start_time).getTime() : undefined,
         };
         setGameRoom(gameRoom);
+        // 自动加入游戏作为参与者
+        if (user && !gameRoom.participants.some(p => p.address === user.address)) {
+          await joinGame(gameId, user.address, user.name);
+        }
       } else {
         alert("遊戲房間不存在。");
         setGameRoom(null);
@@ -143,51 +154,16 @@ export const useGameState = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
-  const createGame = useCallback(async (gameData: Partial<GameRoom>) => {
-    if (!user) return;
-
-    let provider: ethers.BrowserProvider;
-    let signer: ethers.Signer;
-    let address: string;
-
-    try {
-      if (!window.ethereum) {
-        alert('請安裝 MetaMask 或其他兼容的以太坊錢包！');
-        return;
-      }
-      provider = new ethers.BrowserProvider(window.ethereum);
-      signer = await provider.getSigner();
-      address = await signer.getAddress();
-    } catch (error) {
-      console.error('獲取錢包信息失敗:', error);
-      alert('無法獲取錢包信息，請確保錢包已連接。');
-      return;
+  const createGame = useCallback(async (gameData: Partial<GameRoom>): Promise<string | undefined> => {
+    if (!user) {
+      alert('您尚未登入，請先連接錢包。');
+      return undefined;
     }
 
     try {
       setLoading(true);
-      
-      // 檢查是否已認證
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        console.warn('未認證，使用本地模式創建遊戲');
-        // 在本地模式下創建遊戲
-        const localGame: GameRoom = {
-          id: `local-${Date.now()}`,
-          name: gameData.name || '',
-          organizer: user.address,
-          questions: gameData.questions || [],
-          tokenReward: gameData.tokenReward || 0,
-          tokenSymbol: gameData.tokenSymbol || 'QUIZ',
-          status: 'waiting',
-          participants: [],
-          currentQuestionIndex: 0,
-        };
-        setGameRoom(localGame);
-        return;
-      }
       
       // 在 Supabase 中創建遊戲
       const gameId = await gameService.createGame({
@@ -205,105 +181,29 @@ export const useGameState = () => {
 
       // 從資料庫載入完整遊戲資料
       await loadGame(gameId);
-      
-      // 實際質押代幣
-      const totalStaked = (gameData.tokenReward || 0) * (gameData.questions?.length || 0);
-
-      try {
-        // 使用 blockchainService 進行代幣批准和遊戲創建
-        await blockchainService.createGame(
-          '0xb24307c8a40a0dc5609674456b58148d65fbf50c', // QUIZ Token address
-          totalStaked.toString(),
-          gameData.questions?.length || 0,
-          0, // category (placeholder)
-          0  // difficulty (placeholder)
-        );
-        
-        // 更新用戶餘額
-        const newBalance = await blockchainService.getTokenBalance(address);
-        setUser(prev => prev ? { 
-          ...prev, 
-          balance: parseFloat(newBalance) 
-        } : null);
-      } catch (error) {
-        console.error('質押代幣失敗:', error);
-        throw new Error('質押代幣失敗，請確保餘額充足');
-      }
+      return gameId;
       
     } catch (error) {
       console.error('創建遊戲失敗:', error);
-      // 降級到本地模式
-      const localGame: GameRoom = {
-        id: `local-${Date.now()}`,
-        name: gameData.name || '',
-        organizer: user.address,
-        questions: gameData.questions || [],
-        tokenReward: gameData.tokenReward || 0,
-        tokenSymbol: gameData.tokenSymbol || 'QUIZ',
-        status: 'waiting',
-        participants: [],
-        currentQuestionIndex: 0,
-      };
-      setGameRoom(localGame);
+      alert('創建遊戲失敗，請檢查控制台。');
+      return undefined;
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, loadGame]);
 
-  const loadGame = useCallback(async (gameId: string) => {
-    try {
-      // 檢查是否為本地遊戲
-      if (gameId.startsWith('local-')) {
-        return;
-      }
-
-      const gameData = await gameService.getGame(gameId);
-      
-      // 轉換資料庫格式為前端格式
-      const gameRoom: GameRoom = {
-        id: gameData.id,
-        name: gameData.name,
-        organizer: gameData.organizer_address,
-        questions: gameData.questions.map((q: any) => ({
-          id: q.id,
-          question: q.question_text,
-          options: q.options,
-          correctAnswer: q.correct_answer,
-          timeLimit: q.time_limit,
-        })),
-        tokenReward: gameData.token_reward_per_question,
-        tokenSymbol: gameData.token_symbol,
-        status: gameData.status,
-        participants: gameData.participants.map((p: any) => ({
-          id: p.id,
-          address: p.wallet_address,
-          name: p.name,
-          score: p.score,
-          answers: [], // 稍後載入
-          tokensEarned: p.tokens_earned,
-        })),
-        currentQuestionIndex: gameData.current_question_index,
-        startTime: gameData.start_time ? new Date(gameData.start_time).getTime() : undefined,
-      };
-
-      setGameRoom(gameRoom);
-    } catch (error) {
-      console.error('載入遊戲失敗:', error);
-    }
-  }, []);
-
-  const joinGame = useCallback(async (playerName: string) => {
+  const joinGame = useCallback(async (gameId: string, participantAddress: string, participantName: string) => {
     if (!gameRoom || !user) return;
 
     try {
       setLoading(true);
       
       // 檢查是否為本地遊戲
-      if (gameRoom.id.startsWith('local-')) {
+      if (gameId.startsWith('local-')) {
         const newParticipant: Participant = {
           id: `participant-${Date.now()}`,
-          address: user.address,
-          name: playerName,
+          address: participantAddress,
+          name: participantName,
           score: 0,
           answers: [],
           tokensEarned: 0,
@@ -316,20 +216,20 @@ export const useGameState = () => {
         return;
       }
       
-      await gameService.joinGame(gameRoom.id, {
-        walletAddress: user.address,
-        name: playerName,
+      await gameService.joinGame(gameId, {
+        walletAddress: participantAddress,
+        name: participantName,
       });
 
       // 重新載入遊戲資料
-      await loadGame(gameRoom.id);
+      await loadGame(gameId);
       
     } catch (error) {
       console.error('加入遊戲失敗:', error);
     } finally {
       setLoading(false);
     }
-  }, [gameRoom, user, loadGame]);
+  }, [user, loadGame]);
 
   const startGame = useCallback(async () => {
     if (!gameRoom) return;
@@ -487,7 +387,7 @@ export const useGameState = () => {
     } finally {
       setLoading(false);
     }
-  }, [gameRoom, user, loadGame]);
+  }, [user, loadGame]);
 
   const resetGame = useCallback(() => {
     setGameRoom(null);
@@ -536,6 +436,7 @@ export const useGameState = () => {
     loading,
     connectWallet,
     disconnectWallet,
+    loadGame,
     createGame,
     joinGame,
     startGame,
@@ -543,6 +444,5 @@ export const useGameState = () => {
     nextQuestion,
     completeGame,
     resetGame,
-    fetchGameRoom,
   };
 };

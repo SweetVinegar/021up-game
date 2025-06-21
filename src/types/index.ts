@@ -10,6 +10,7 @@ export interface GameRoom {
   id: string;
   name: string;
   organizer: string;
+  organizerAddress: string;
   questions: Question[];
   tokenReward: number;
   tokenSymbol: string;
