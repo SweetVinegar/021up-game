@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trophy, Users, Clock, Coins, TrendingUp, Activity } from 'lucide-react';
+import { Trophy, Users, Coins, TrendingUp } from 'lucide-react';
 import { gameService } from '../services/gameService';
 
 interface GameDashboardProps {
