@@ -155,9 +155,40 @@ export const useGameState = () => {
     try {
       // 检查是否为本地游戏
       if (gameId.startsWith('local-')) {
-        // 对于本地游戏，不从 Supabase 加载，直接返回
-        setLoading(false);
-        return;
+        // 对于本地游戏，尝试从 localStorage 加载
+        const localGameData = localStorage.getItem(`local-game-${gameId}`);
+        if (localGameData) {
+          try {
+            const parsedGame: GameRoom = JSON.parse(localGameData);
+            setGameRoom(parsedGame);
+            setLoading(false);
+            return;
+          } catch (parseError) {
+            console.error("解析本地遊戲數據失敗:", parseError);
+            alert("加載本地遊戲數據失敗，數據可能已損壞。");
+            setGameRoom(null); // Clear game room if data is corrupted
+            setLoading(false);
+            return;
+          }
+        } else {
+          // 如果 localStorage 中沒有，則模擬一個空的本地遊戲
+          console.warn(`本地遊戲 ${gameId} 在 localStorage 中未找到，將創建一個模擬遊戲。`);
+          const localGameRoom: GameRoom = {
+            id: gameId,
+            name: "Local Game",
+            organizer: user?.address || "",
+            organizerAddress: user?.address || "",
+            questions: [], // 本地遊戲的問題需要從其他地方加載或生成
+            tokenReward: 0,
+            tokenSymbol: "",
+            status: 'waiting',
+            participants: [],
+            currentQuestionIndex: 0,
+          };
+          setGameRoom(localGameRoom);
+          setLoading(false);
+          return;
+        }
       }
 
       const room = await gameService.getGame(gameId);
@@ -211,49 +242,70 @@ export const useGameState = () => {
     }
   }, [user]);
 
-  const createGame = useCallback(async (gameData: Partial<GameRoom>): Promise<string | undefined> => {
-    if (!user) {
-      alert('您尚未登入，請先連接錢包。');
-      return undefined;
+  const createGame = async (gameData: Partial<GameRoom>): Promise<string | undefined> => {
+    if (!user?.address) return undefined;
+
+    // Check if this is a local game (identified by the presence of 'id' starting with 'local-')
+    if (gameData.id && gameData.id.startsWith('local-')) {
+      const localGame: GameRoom = {
+        id: gameData.id,
+        name: gameData.name || 'Local Game',
+        organizer: user.address,
+        organizerAddress: user.address,
+        questions: gameData.questions || [],
+        tokenReward: gameData.tokenReward || 0,
+        tokenSymbol: gameData.tokenSymbol || 'QUIZ',
+        status: 'waiting',
+        participants: [],
+        currentQuestionIndex: 0,
+      };
+
+      localStorage.setItem(`local-game-${gameData.id}`, JSON.stringify(localGame));
+      setGameRoom(localGame); // Update the gameRoom state with the newly created local game
+      return gameData.id;
     }
 
     try {
-      setLoading(true);
-      
-      // 確認 Supabase 認證狀態
-      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-      if (authError || !authUser) {
-        console.error('Supabase 認證失敗:', authError);
-        alert('認證失敗，請重新連接錢包。');
-        return undefined;
-      }
-      
-      // 在 Supabase 中創建遊戲
-      const gameId = await gameService.createGame({
-        name: gameData.name || '',
-        organizerAddress: user.address,
-        questions: gameData.questions?.map((q) => ({
+      const { data: game, error } = await supabase
+        .from('games')
+        .insert([
+          {
+            name: gameData.name,
+            organizer: user.address,
+            organizer_address: user.address,
+            token_reward: gameData.tokenReward,
+            token_symbol: gameData.tokenSymbol,
+            status: 'waiting',
+          },
+        ])
+        .select('id')
+        .single();
+
+      if (error) throw error;
+
+      // Insert questions
+      if (gameData.questions && gameData.questions.length > 0) {
+        const questionsToInsert = gameData.questions.map((q) => ({
+          game_id: game.id,
           question: q.question,
           options: q.options,
-          correctAnswer: q.correctAnswer,
-          timeLimit: q.timeLimit,
-        })) || [],
-        tokenReward: gameData.tokenReward || 0,
-        tokenSymbol: gameData.tokenSymbol || 'QUIZ',
-      });
+          correct_answer: q.correctAnswer,
+          time_limit: q.timeLimit,
+        }));
 
-      // 從資料庫載入完整遊戲資料
-      await loadGame(gameId);
-      return gameId;
-      
+        const { error: questionsError } = await supabase
+          .from('questions')
+          .insert(questionsToInsert);
+
+        if (questionsError) throw questionsError;
+      }
+
+      return game.id;
     } catch (error) {
-      console.error('創建遊戲失敗:', error);
-      alert('創建遊戲失敗，請檢查控制台。');
+      console.error('Error creating game:', error);
       return undefined;
-    } finally {
-      setLoading(false);
     }
-  }, [user, loadGame]);
+  };
 
   const joinGame = useCallback(async (gameId: string, participantAddress: string, participantName: string) => {
     if (!gameRoom || !user) return;
@@ -294,33 +346,30 @@ export const useGameState = () => {
     }
   }, [user, loadGame]);
 
-  const startGame = useCallback(async () => {
-    if (!gameRoom) return;
+  const startGame = async (gameId: string) => {
+    if (!user?.address || !gameRoom || gameRoom.id !== gameId) return;
+
+    // Handle local game start
+    if (gameId.startsWith('local-')) {
+      const updatedGameRoom = { ...gameRoom, status: 'active' as const };
+      localStorage.setItem(`local-game-${gameId}`, JSON.stringify(updatedGameRoom));
+      setGameRoom(updatedGameRoom);
+      return;
+    }
 
     try {
-      setLoading(true);
-      
-      // 檢查是否為本地遊戲
-      if (gameRoom.id.startsWith('local-')) {
-        setGameRoom(prev => prev ? {
-          ...prev,
-          status: 'active',
-          startTime: Date.now(),
-        } : null);
-        return;
-      }
-      
-      await gameService.startGame(gameRoom.id);
-      
-      // 重新載入遊戲資料
-      await loadGame(gameRoom.id);
-      
+      const { error } = await supabase
+        .from('games')
+        .update({ status: 'active' })
+        .eq('id', gameId);
+
+      if (error) throw error;
+
+      setGameRoom((prev) => (prev ? { ...prev, status: 'active' } : null));
     } catch (error) {
-      console.error('開始遊戲失敗:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error starting game:', error);
     }
-  }, [gameRoom, loadGame]);
+  };
 
   const submitAnswer = useCallback(async (answer: Answer) => {
     if (!gameRoom || !user) return;

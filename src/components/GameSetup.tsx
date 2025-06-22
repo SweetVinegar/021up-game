@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Play, Coins } from 'lucide-react';
+import { PlusCircle, Trash2, Play } from 'lucide-react';
 import { Question, GameRoom } from '../types';
 
 interface GameSetupProps {
@@ -44,14 +44,31 @@ export const GameSetup: React.FC<GameSetupProps> = ({ onCreateGame, userBalance 
     setCurrentQuestion({ ...currentQuestion, options: newOptions });
   };
 
-  const createGame = async () => {
+  const createGame = async (isLocal: boolean = false) => {
     if (gameName && questions.length > 0 && tokenReward <= userBalance) {
-      return await onCreateGame({
-        name: gameName,
-        questions,
-        tokenReward,
-        tokenSymbol: 'QUIZ',
-      });
+      if (isLocal) {
+        // For local games, we don't interact with Supabase directly for creation
+        // Instead, we'll pass the game data to useGameState to simulate it
+        const localGameId = `local-${Date.now()}`;
+        await onCreateGame({
+          id: localGameId,
+          name: gameName,
+          questions,
+          tokenReward,
+          tokenSymbol: 'QUIZ',
+          status: 'waiting',
+          participants: [],
+          currentQuestionIndex: 0,
+        });
+        return localGameId;
+      } else {
+        return await onCreateGame({
+          name: gameName,
+          questions,
+          tokenReward,
+          tokenSymbol: 'QUIZ',
+        });
+      }
     }
     return undefined; // Ensure a return value for all paths
   };
@@ -156,7 +173,7 @@ export const GameSetup: React.FC<GameSetupProps> = ({ onCreateGame, userBalance 
               onClick={addQuestion}
               className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
             >
-              <Plus className="w-4 h-4" />
+              <PlusCircle size={24} />
               Add Question
             </button>
           </div>
@@ -199,19 +216,25 @@ export const GameSetup: React.FC<GameSetupProps> = ({ onCreateGame, userBalance 
         )}
 
         {/* Create Game Button */}
-        <div className="text-center">
+        <div className="text-center mt-8">
           <button
-            onClick={createGame}
+            onClick={() => createGame(false)}
             disabled={!gameName || questions.length === 0 || totalTokens > userBalance}
             className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white px-8 py-4 rounded-full flex items-center gap-3 mx-auto transition-all duration-300 transform hover:scale-105 disabled:hover:scale-100"
           >
-            <Coins className="w-5 h-5" />
-            Create Game & Stake {totalTokens} QUIZ
-            <Play className="w-5 h-5" />
+             <Play className="w-5 h-5" />
+             Create Online Game
           </button>
-          
+          <button
+            onClick={() => createGame(true)}
+            disabled={!gameName || questions.length === 0}
+            className="mt-4 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white px-8 py-4 rounded-full flex items-center gap-3 mx-auto transition-all duration-300 transform hover:scale-105 disabled:hover:scale-100"
+          >
+            <Play className="w-5 h-5" />
+            Create Local Game (for testing)
+          </button>
           {totalTokens > userBalance && (
-            <p className="text-red-400 text-sm mt-2">Insufficient balance to create game</p>
+            <p className="text-red-400 text-sm mt-2">Insufficient QUIZ balance to create this game.</p>
           )}
         </div>
       </div>

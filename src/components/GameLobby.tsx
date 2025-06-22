@@ -2,7 +2,7 @@ import React from 'react';
 import { Users, Play, Clock, Coins } from 'lucide-react';
 import { GameRoom } from '../types';
 
-interface GameLobbyProps {
+export interface GameLobbyProps {
   gameRoom: GameRoom;
   isOrganizer: boolean;
   onStartGame: () => void;

@@ -20,15 +20,26 @@ export const GamePlay: React.FC<GamePlayProps> = ({
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [startTime, setStartTime] = useState<number>(0);
 
-  const currentQuestion = gameRoom.questions[gameRoom.currentQuestionIndex];
-  const participant = gameRoom.participants.find(p => p.address === userAddress);
+  const currentQuestion = gameRoom?.questions[gameRoom?.currentQuestionIndex || 0];
+  
+  if (!currentQuestion) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full">
+        <h2 className="text-2xl font-bold mb-4">No questions available</h2>
+        <p className="text-gray-500">This game doesn't have any questions yet.</p>
+      </div>
+    );
+  }
+  const participant = gameRoom?.participants.find(p => p.address === userAddress);
   
   useEffect(() => {
-    setTimeLeft(currentQuestion.timeLimit);
-    setHasSubmitted(false);
-    setSelectedOption(null);
-    setStartTime(Date.now());
-  }, [gameRoom.currentQuestionIndex, currentQuestion.timeLimit]);
+    if (gameRoom?.status === 'active' && currentQuestion) {
+      setStartTime(Date.now());
+      setTimeLeft(currentQuestion.timeLimit);
+      setSelectedOption(null);
+      setHasSubmitted(false);
+    }
+  }, [gameRoom?.status, gameRoom?.currentQuestionIndex, currentQuestion]);
 
   useEffect(() => {
     if (timeLeft > 0 && !hasSubmitted) {
@@ -105,9 +116,13 @@ export const GamePlay: React.FC<GamePlayProps> = ({
 
         {/* Question */}
         <div className="bg-white/5 rounded-xl p-8 mb-8">
-          <h2 className="text-2xl font-bold text-white mb-8 text-center leading-relaxed">
+          <h2 className="text-2xl font-bold text-white mb-4 text-center leading-relaxed">
             {currentQuestion.question}
           </h2>
+
+          <div className="mb-4 text-gray-500 text-center">
+            Question {gameRoom.currentQuestionIndex + 1} of {gameRoom.questions.length}
+          </div>
 
           {/* Options */}
           <div className="grid md:grid-cols-2 gap-4">

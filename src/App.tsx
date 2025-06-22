@@ -7,6 +7,8 @@ import { GamePlay } from './components/GamePlay';
 import { GameResults } from './components/GameResults';
 import { GameDashboard } from './components/GameDashboard';
 import { useGameState } from './hooks/useGameState';
+import { GameRoom } from './types';
+
 import { BrowserRouter as Router, Routes, Route, useParams } from 'react-router-dom';
 
 
@@ -39,6 +41,17 @@ function Home() {
 
   const [currentView, setCurrentView] = React.useState<'game' | 'dashboard'>('game');
   const [createdGameId, setCreatedGameId] = React.useState<string | null>(null);
+
+  const handleCreateGame = async (gameData: Partial<GameRoom>) => {
+    const id = await createGame(gameData);
+    if (id && typeof id === 'string' && id.startsWith('local-')) {
+      // For local games, navigate directly to the game page
+      window.location.href = `/game/${id}`;
+      return undefined; // Indicate that we've handled the navigation
+    }
+    setCreatedGameId(id === undefined ? null : id);
+    return id;
+  };
 
   // 自動推進問題
   React.useEffect(() => {
@@ -172,9 +185,8 @@ function Home() {
           </div>
         ) : (
           <GameSetup
-            onCreateGame={createGame}
+            onCreateGame={handleCreateGame}
             userBalance={user.balance || 0} // Assuming user.balance exists, default to 0 if not
-
           />
         )}
       </div>
@@ -202,7 +214,7 @@ function Home() {
               gameRoom={gameRoom}
               userAddress={user.address}
               onJoinGame={(gameId: string, participantAddress: string, participantName: string) => joinGame(gameId, participantAddress, participantName)}
-              onStartGame={startGame}
+              onStartGame={() => startGame(gameRoom.id)}
               isOrganizer={gameRoom.organizerAddress === user.address}
             />
           )}
@@ -339,7 +351,7 @@ export function GamePage() {
           <GameLobby
             gameRoom={gameRoom}
             isOrganizer={isOrganizer}
-            onStartGame={startGame}
+            onStartGame={() => startGame(gameRoom.id)}
             onJoinGame={() => joinGame(gameId as string, user.address, user.name)}
             userAddress={user.address}
           />
