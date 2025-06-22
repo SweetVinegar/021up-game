@@ -20,6 +20,12 @@ export class GameService {
     tokenSymbol: string;
   }) {
     try {
+      // 檢查用戶認證狀態
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error('用戶未認證，請先連接錢包');
+      }
+
       // 創建遊戲記錄
       const { data: game, error: gameError } = await supabase
         .from('games')
@@ -230,7 +236,9 @@ export class GameService {
       .select(`
         *,
         questions (*),
-        participants (*)
+        participants (*,
+          answers (*)
+        )
       `)
       .eq('id', gameId)
       .single();

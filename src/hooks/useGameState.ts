@@ -182,7 +182,12 @@ export const useGameState = () => {
             address: p.wallet_address,
             name: p.name,
             score: p.score,
-            answers: [],
+            answers: p.answers ? p.answers.map((a: any) => ({
+              questionId: a.question_id,
+              selectedOption: a.selected_option,
+              timeToAnswer: a.time_to_answer,
+              isCorrect: a.is_correct,
+            })) : [],
             tokensEarned: p.tokens_earned,
           })),
           currentQuestionIndex: room.current_question_index,
@@ -214,6 +219,14 @@ export const useGameState = () => {
 
     try {
       setLoading(true);
+      
+      // 確認 Supabase 認證狀態
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+      if (authError || !authUser) {
+        console.error('Supabase 認證失敗:', authError);
+        alert('認證失敗，請重新連接錢包。');
+        return undefined;
+      }
       
       // 在 Supabase 中創建遊戲
       const gameId = await gameService.createGame({
