@@ -271,9 +271,10 @@ export const useGameState = () => {
         .insert([
           {
             name: gameData.name,
-            organizer: user.address,
+
             organizer_address: user.address,
-            token_reward: gameData.tokenReward,
+            token_address: '0xb24307c8a40a0dc5609674456b58148d65fbf50c', // Temporary placeholder
+            token_reward_per_question: gameData.tokenReward,
             token_symbol: gameData.tokenSymbol,
             status: 'waiting',
           },
@@ -285,12 +286,13 @@ export const useGameState = () => {
 
       // Insert questions
       if (gameData.questions && gameData.questions.length > 0) {
-        const questionsToInsert = gameData.questions.map((q) => ({
+        const questionsToInsert = gameData.questions.map((q, index) => ({
           game_id: game.id,
-          question: q.question,
+          question_text: q.question,
           options: q.options,
           correct_answer: q.correctAnswer,
           time_limit: q.timeLimit,
+          order_index: index,
         }));
 
         const { error: questionsError } = await supabase
