@@ -196,7 +196,7 @@ export const useGameState = () => {
         const gameRoom: GameRoom = {
           id: room.id,
           name: room.name,
-          organizer: room.organizer_address,
+          organizer: room.organizer_address, // 确保这里使用 organizer_address
           organizerAddress: room.organizer_address,
           questions: room.questions.map((q: any) => ({
             id: q.id,
@@ -204,6 +204,7 @@ export const useGameState = () => {
             options: q.options,
             correctAnswer: q.correct_answer,
             timeLimit: q.time_limit,
+            orderIndex: q.order_index, // 确保 order_index 被正确映射
           })),
           tokenReward: room.token_reward_per_question,
           tokenSymbol: room.token_symbol,
@@ -220,7 +221,7 @@ export const useGameState = () => {
               isCorrect: a.is_correct,
             })) : [],
             tokensEarned: p.tokens_earned,
-          })),
+          })), // 确保 participants 被正确映射
           currentQuestionIndex: room.current_question_index,
           startTime: room.start_time ? new Date(room.start_time).getTime() : undefined,
         };

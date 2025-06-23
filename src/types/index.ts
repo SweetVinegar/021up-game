@@ -4,6 +4,7 @@ export interface Question {
   options: string[];
   correctAnswer: number;
   timeLimit: number;
+  orderIndex: number;
 }
 
 export interface GameRoom {

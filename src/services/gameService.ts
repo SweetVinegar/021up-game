@@ -177,6 +177,26 @@ export class GameService {
     }
   }
 
+  async getGame(gameId: string) {
+    try {
+      const { data: game, error } = await supabase
+        .from('games')
+        .select(`
+          *,
+          questions (*),
+          participants (*)
+        `)
+        .eq('id', gameId)
+        .single();
+
+      if (error) throw error;
+      return game;
+    } catch (error) {
+      console.error('獲取遊戲錯誤:', error);
+      throw error;
+    }
+  }
+
   async updateGameQuestion(gameId: string, questionIndex: number) {
     try {
       const { error } = await supabase
@@ -230,22 +250,7 @@ export class GameService {
     }
   }
 
-  async getGame(gameId: string) {
-    const { data: game, error } = await supabase
-      .from('games')
-      .select(`
-        *,
-        questions (*),
-        participants (*,
-          answers (*)
-        )
-      `)
-      .eq('id', gameId)
-      .single();
 
-    if (error) throw error;
-    return game;
-  }
 
   async getGamesByOrganizer(organizerAddress: string) {
     const { data: games, error } = await supabase

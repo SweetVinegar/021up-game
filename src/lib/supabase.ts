@@ -7,11 +7,15 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('缺少 Supabase 環境變數');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  global: {
-    headers: { 'x-client-info': 'SUPABASE_JS' },
-  },
-});
+export const supabase = createClient<Database>(
+  supabaseUrl,
+  supabaseAnonKey,
+  {
+    realtime: {
+      log_level: 'info',
+    },
+  }
+);
 
 // 資料庫類型定義
 export interface Database {
